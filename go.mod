@@ -16,6 +16,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/elazarl/goproxy v0.0.0-20191011121108-aa519ddbe484
+	github.com/emersion/go-smtp v0.13.0
 	github.com/evilsocket/islazy v1.10.4
 	github.com/gobwas/glob v0.0.0-20181002190808-e7a84e9525fe
 	github.com/google/go-github v17.0.0+incompatible
