@@ -11,8 +11,8 @@ import (
 )
 
 type SmtpSession struct {
-	mod     *SmtpServer
-	logname string
+	mod         *SmtpServer
+	sessionFile string
 }
 
 func (s *SmtpSession) Mail(from string, opts smtp.MailOptions) error {
@@ -29,10 +29,10 @@ func (s *SmtpSession) Data(r io.Reader) error {
 	if b, err := ioutil.ReadAll(r); err != nil {
 		return err
 	} else {
-		if s.mod.outdir == "" {
+		if s.mod.logDir == "" {
 			s.mod.Info("Data: %s", string(b))
 		} else {
-			if err := ioutil.WriteFile(s.mod.outdir+s.logname+".data", b, 0600); err != nil {
+			if err := ioutil.WriteFile(s.mod.logDir+s.sessionFile+".data", b, 0644); err != nil {
 				s.mod.Warning("error while saving the file: %s", err)
 			}
 
@@ -54,25 +54,25 @@ type Backend struct {
 func (bkd *Backend) Login(state *smtp.ConnectionState, username, password string) (smtp.Session, error) {
 	fileName := fmt.Sprintf("/%v", time.Now().Unix())
 	info := fmt.Sprintf("Username: %s, Password: %s", username, password)
-	if bkd.mod.outdir == "" {
+	if bkd.mod.logDir == "" {
 		bkd.mod.Info(info)
 	} else {
-		if err := ioutil.WriteFile(bkd.mod.outdir+fileName+".pass", []byte(info), 0600); err != nil {
+		if err := ioutil.WriteFile(bkd.mod.logDir+fileName+".pass", []byte(info), 0600); err != nil {
 			bkd.mod.Warning("error while saving the file: %s", err)
 		}
 	}
-	return &SmtpSession{mod: bkd.mod, logname: fileName}, nil
+	return &SmtpSession{mod: bkd.mod, sessionFile: fileName}, nil
 }
 
 func (bkd *Backend) AnonymousLogin(state *smtp.ConnectionState) (smtp.Session, error) {
 	fileName := fmt.Sprintf("/%v", time.Now().Unix())
-	return &SmtpSession{mod: bkd.mod, logname: fileName}, nil
+	return &SmtpSession{mod: bkd.mod, sessionFile: fileName}, nil
 }
 
 type SmtpServer struct {
 	session.SessionModule
 	server *smtp.Server
-	outdir string
+	logDir string
 }
 
 func NewSmtpServer(s *session.Session) *SmtpServer {
@@ -95,7 +95,7 @@ func NewSmtpServer(s *session.Session) *SmtpServer {
 		session.IPv4Validator,
 		"Address to bind the smtp server to."))
 
-	mod.AddParam(session.NewStringParameter("smtp.server.outdir",
+	mod.AddParam(session.NewStringParameter("smtp.server.logdir",
 		"",
 		"",
 		"If filled, the mails will be saved to this path instead of being logged."))
@@ -120,7 +120,7 @@ func (mod *SmtpServer) Name() string {
 }
 
 func (mod *SmtpServer) Description() string {
-	return "A simple SMTP server, to intercept email and password."
+	return "A simple SMTP server, to intercept emails and password."
 }
 
 func (mod *SmtpServer) Author() string {
@@ -131,7 +131,7 @@ func (mod *SmtpServer) Configure() error {
 	var err error
 	var port int
 	var addr string
-	var outdir string
+	var logDir string
 
 	if err, port = mod.IntParam("smtp.server.port"); err != nil {
 		return err
@@ -143,10 +143,10 @@ func (mod *SmtpServer) Configure() error {
 
 	mod.server.Addr = fmt.Sprintf("%s:%v", addr, port)
 
-	if err, outdir = mod.StringParam("smtp.server.outdir"); err != nil {
+	if err, logDir = mod.StringParam("smtp.server.logdir"); err != nil {
 		return err
 	}
-	mod.outdir = outdir
+	mod.logDir = logDir
 
 	return nil
 }
@@ -158,11 +158,10 @@ func (mod *SmtpServer) Start() error {
 
 	return mod.SetRunning(true, func() {
 		var err error
-		mod.Info("starting on SMTP port %s", mod.server.Addr)
-		if mod.outdir != "" {
-			mod.Info("logging to %s", mod.outdir)
+		mod.Info("starting SMTP server on %s", mod.server.Addr)
+		if mod.logDir != "" {
+			mod.Info("logging to directory %s", mod.logDir)
 		}
-		// FIXME erreur
 		if err = mod.server.ListenAndServe(); err != nil {
 			mod.Error("%v", err)
 			mod.Stop()
