@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-// FIXME how to log with mod in a file
 type SmtpSession struct {
 	mod     *SmtpServer
 	logname string
@@ -90,6 +89,12 @@ func NewSmtpServer(s *session.Session) *SmtpServer {
 	mod.AddParam(session.NewIntParameter("smtp.server.port",
 		"25",
 		"Port to bind the smtp server to."))
+
+	mod.AddParam(session.NewStringParameter("smtp.server.address",
+		session.ParamIfaceAddress,
+		session.IPv4Validator,
+		"Address to bind the smtp server to."))
+
 	mod.AddParam(session.NewStringParameter("smtp.server.outdir",
 		"",
 		"",
@@ -125,13 +130,18 @@ func (mod *SmtpServer) Author() string {
 func (mod *SmtpServer) Configure() error {
 	var err error
 	var port int
+	var addr string
 	var outdir string
 
 	if err, port = mod.IntParam("smtp.server.port"); err != nil {
 		return err
 	}
-	// FIXME use also addr
-	mod.server.Addr = fmt.Sprintf(":%v", port)
+
+	if err, addr = mod.StringParam("smtp.server.address"); err != nil {
+		return err
+	}
+
+	mod.server.Addr = fmt.Sprintf("%s:%v", addr, port)
 
 	if err, outdir = mod.StringParam("smtp.server.outdir"); err != nil {
 		return err
