@@ -12,7 +12,8 @@ import (
 
 // FIXME how to log with mod in a file
 type SmtpSession struct {
-	mod *SmtpServer
+	mod     *SmtpServer
+	logname string
 }
 
 func (s *SmtpSession) Mail(from string, opts smtp.MailOptions) error {
@@ -29,7 +30,14 @@ func (s *SmtpSession) Data(r io.Reader) error {
 	if b, err := ioutil.ReadAll(r); err != nil {
 		return err
 	} else {
-		s.mod.Info("Data: %s", string(b))
+		if s.mod.outdir == "" {
+			s.mod.Info("Data: %s", string(b))
+		} else {
+			if err := ioutil.WriteFile(s.mod.outdir+s.logname+".data", b, 0600); err != nil {
+				s.mod.Warning("error while saving the file: %s", err)
+			}
+
+		}
 	}
 	return nil
 }
@@ -45,18 +53,27 @@ type Backend struct {
 }
 
 func (bkd *Backend) Login(state *smtp.ConnectionState, username, password string) (smtp.Session, error) {
-	bkd.mod.Info("Username: %s, Password: %s", username, password)
-	// FIXME log the login password to a file
-	return &SmtpSession{mod: bkd.mod}, nil
+	fileName := fmt.Sprintf("/%v", time.Now().Unix())
+	info := fmt.Sprintf("Username: %s, Password: %s", username, password)
+	if bkd.mod.outdir == "" {
+		bkd.mod.Info(info)
+	} else {
+		if err := ioutil.WriteFile(bkd.mod.outdir+fileName+".pass", []byte(info), 0600); err != nil {
+			bkd.mod.Warning("error while saving the file: %s", err)
+		}
+	}
+	return &SmtpSession{mod: bkd.mod, logname: fileName}, nil
 }
 
 func (bkd *Backend) AnonymousLogin(state *smtp.ConnectionState) (smtp.Session, error) {
-	return &SmtpSession{mod: bkd.mod}, nil
+	fileName := fmt.Sprintf("/%v", time.Now().Unix())
+	return &SmtpSession{mod: bkd.mod, logname: fileName}, nil
 }
 
 type SmtpServer struct {
 	session.SessionModule
 	server *smtp.Server
+	outdir string
 }
 
 func NewSmtpServer(s *session.Session) *SmtpServer {
@@ -73,6 +90,10 @@ func NewSmtpServer(s *session.Session) *SmtpServer {
 	mod.AddParam(session.NewIntParameter("smtp.server.port",
 		"25",
 		"Port to bind the smtp server to."))
+	mod.AddParam(session.NewStringParameter("smtp.server.outdir",
+		"",
+		"",
+		"If filled, the mails will be saved to this path instead of being logged."))
 
 	mod.AddHandler(session.NewModuleHandler("smtp.server on", "",
 		"Start smtpd server.",
@@ -104,11 +125,18 @@ func (mod *SmtpServer) Author() string {
 func (mod *SmtpServer) Configure() error {
 	var err error
 	var port int
+	var outdir string
+
 	if err, port = mod.IntParam("smtp.server.port"); err != nil {
 		return err
 	}
 	// FIXME use also addr
 	mod.server.Addr = fmt.Sprintf(":%v", port)
+
+	if err, outdir = mod.StringParam("smtp.server.outdir"); err != nil {
+		return err
+	}
+	mod.outdir = outdir
 
 	return nil
 }
@@ -121,6 +149,9 @@ func (mod *SmtpServer) Start() error {
 	return mod.SetRunning(true, func() {
 		var err error
 		mod.Info("starting on SMTP port %s", mod.server.Addr)
+		if mod.outdir != "" {
+			mod.Info("logging to %s", mod.outdir)
+		}
 		// FIXME erreur
 		if err = mod.server.ListenAndServe(); err != nil {
 			mod.Error("%v", err)
